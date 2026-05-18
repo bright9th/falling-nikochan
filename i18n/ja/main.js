@@ -142,6 +142,17 @@ export default {
         "それ以前のバージョンでは一部正常に動作・表示しない可能性があります。",
       showAll: "もっと見る",
     },
+    theme: {
+      title: "Theme",
+      light: "Light",
+      dark: "Dark",
+      default: "System Default",
+      preset: "Preset",
+      presetDefault: "Default",
+      beach: "Beach",
+      sunset: "Sunset",
+      mono: "Mono",
+    },
     links: {
       title: "その他",
       titleShort: "その他",
@@ -179,5 +190,10 @@ export default {
     light: "ライト",
     dark: "ダーク",
     default: "自動",
+    preset: "Preset",
+    presetDefault: "Default",
+    beach: "Beach",
+    sunset: "Sunset",
+    mono: "Mono",
   },
 };

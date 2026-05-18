@@ -151,6 +151,17 @@ export default {
         "Some parts may not function or display properly in earlier versions.",
       showAll: "Show More",
     },
+    theme: {
+      title: "Theme",
+      light: "Light",
+      dark: "Dark",
+      default: "System Default",
+      preset: "Preset",
+      presetDefault: "Default",
+      beach: "Beach",
+      sunset: "Sunset",
+      mono: "Mono",
+    },
     links: {
       title: "Other",
       titleShort: "Other",
@@ -191,5 +202,10 @@ export default {
     light: "Light",
     dark: "Dark",
     default: "System Default",
+    preset: "Preset",
+    presetDefault: "Default",
+    beach: "Beach",
+    sunset: "Sunset",
+    mono: "Mono",
   },
 };

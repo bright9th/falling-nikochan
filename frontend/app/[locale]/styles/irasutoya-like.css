@@ -34,14 +34,50 @@ body.fn-body {
     #bgGradient > stop {
       &:nth-child(1) {
         stop-color: var(--color-sky-200);
+        .fn-theme-beach & {
+          stop-color: var(--color-cyan-100);
+        }
+        .fn-theme-sunset & {
+          stop-color: #ccdafa;
+        }
+        .fn-theme-mono & {
+          stop-color: #dddddd;
+        }
         @variant dark {
           stop-color: var(--color-orange-975);
+          .fn-theme-beach & {
+            stop-color: var(--color-sky-975);
+          }
+          .fn-theme-sunset & {
+            stop-color: #0c1a3a;
+          }
+          .fn-theme-mono & {
+            stop-color: #1b1b1b;
+          }
         }
       }
       &:nth-child(2) {
         stop-color: var(--color-sky-50);
+        .fn-theme-beach & {
+          stop-color: var(--color-blue-100);
+        }
+        .fn-theme-sunset & {
+          stop-color: #f5d7d7;
+        }
+        .fn-theme-mono & {
+          stop-color: #ffffff;
+        }
         @variant dark {
           stop-color: var(--color-orange-950);
+          .fn-theme-beach & {
+            stop-color: var(--color-cyan-950);
+          }
+          .fn-theme-sunset & {
+            stop-color: #351717;
+          }
+          .fn-theme-mono & {
+            stop-color: #262626;
+          }
         }
       }
     }
@@ -51,8 +87,26 @@ body.fn-body {
 
     rect:not(.dummy) {
       fill: var(--color-lime-600);
+      .fn-theme-beach & {
+        fill: #9e8c56;
+      }
+      .fn-theme-sunset & {
+        fill: #484472;
+      }
+      .fn-theme-mono & {
+        fill: #888888;
+      }
       @variant dark {
         fill: var(--color-lime-900);
+        .fn-theme-beach & {
+          fill: #5e4c36;
+        }
+        .fn-theme-sunset & {
+          fill: #283442;
+        }
+        .fn-theme-mono & {
+          fill: #444444;
+        }
       }
     }
   }
@@ -61,27 +115,99 @@ body.fn-body {
 
     #grassPattern > g {
       fill: var(--color-lime-200);
+      .fn-theme-beach & {
+        fill: #f6f5b7;
+      }
+      .fn-theme-sunset & {
+        fill: #a4aee0;
+      }
+      .fn-theme-mono & {
+        fill: #eeeeee;
+      }
       @variant dark {
         fill: var(--color-lime-600);
+        .fn-theme-beach & {
+          fill: #968c67;
+        }
+        .fn-theme-sunset & {
+          fill: #646eb0;
+        }
+        .fn-theme-mono & {
+          fill: #999999;
+        }
       }
     }
     #grassGradient > stop {
       &:nth-child(1) {
         stop-color: var(--color-lime-300);
+        .fn-theme-beach & {
+          stop-color: #f9e67c;
+        }
+        .fn-theme-sunset & {
+          stop-color: #bc83b7;
+        }
+        .fn-theme-mono & {
+          stop-color: #cccccc;
+        }
         @variant dark {
           stop-color: var(--color-lime-700);
+          .fn-theme-beach & {
+            stop-color: #99765c;
+          }
+          .fn-theme-sunset & {
+            stop-color: #695374;
+          }
+          .fn-theme-mono & {
+            stop-color: #777777;
+          }
         }
       }
       &:nth-child(2) {
         stop-color: var(--color-lime-500);
+        .fn-theme-beach & {
+          stop-color: #dcce78;
+        }
+        .fn-theme-sunset & {
+          stop-color: #637eb0;
+        }
+        .fn-theme-mono & {
+          stop-color: #aaaaaa;
+        }
         @variant dark {
           stop-color: var(--color-lime-800);
+          .fn-theme-beach & {
+            stop-color: #7c5e38;
+          }
+          .fn-theme-sunset & {
+            stop-color: #434e70;
+          }
+          .fn-theme-mono & {
+            stop-color: #666666;
+          }
         }
       }
       &:nth-child(3) {
         stop-color: var(--color-lime-600);
+        .fn-theme-beach & {
+          stop-color: #ccc27c;
+        }
+        .fn-theme-sunset & {
+          stop-color: #416c9e;
+        }
+        .fn-theme-mono & {
+          stop-color: #888888;
+        }
         @variant dark {
           stop-color: var(--color-lime-900);
+          .fn-theme-beach & {
+            stop-color: #6c522c;
+          }
+          .fn-theme-sunset & {
+            stop-color: #213c6e;
+          }
+          .fn-theme-mono & {
+            stop-color: #555555;
+          }
         }
       }
     }
