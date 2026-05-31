@@ -321,6 +321,14 @@ export default function FallingWindow(props: Props) {
           canvasWidth.current * tailsCanvasDPR,
           canvasHeight.current * tailsCanvasDPR
         );
+
+        const clamp = (v: number, lo: number, hi: number) =>
+          Math.max(lo, Math.min(hi, v));
+        const toScreenX = (x: number) => x * boxSize + canvasMarginX;
+        const toScreenY = (y: number) =>
+          canvasMarginY + boxSize - targetY * boxSize - y * boxSize;
+        let prevDn: DisplayNote | null = null;
+
         for (const dn of displayNotes.current) {
           if (!displayNikochan.current[dn.id]) {
             displayNikochan.current[dn.id] = new DisplayNikochan(
@@ -334,6 +342,179 @@ export default function FallingWindow(props: Props) {
           shouldHideBPMSign ||= dns.shouldHideBPMSign;
           dns.drawNikochan(nctx);
           dns.drawTail(ctx);
+
+          // dns.drawLine(ctx, ...);
+          if (prevDn) {
+            const prevNote = notes[prevDn.id];
+            const currNote = notes[dn.id];
+
+            const canConnect =
+              currNote.hitTimeSec === prevNote.hitTimeSec &&
+              prevNote.done === 0 &&
+              currNote.done === 0;
+
+            if (canConnect) {
+              const sameTargetX = currNote.targetX === prevNote.targetX;
+              const currIsLeft = sameTargetX
+                ? dn.vel.x < prevDn.vel.x
+                : currNote.targetX < prevNote.targetX;
+
+              const leftPos = currIsLeft ? dn.pos : prevDn.pos;
+              const rightPos = currIsLeft ? prevDn.pos : dn.pos;
+
+              const leftVel = currIsLeft ? dn.vel : prevDn.vel;
+              const rightVel = currIsLeft ? prevDn.vel : dn.vel;
+
+              // direction from a -> b
+              const dirX = leftPos.x - rightPos.x;
+              const dirY = leftPos.y - rightPos.y;
+
+              const dirLen = Math.hypot(dirX, dirY);
+
+              if (dirLen > 0.0001) {
+                // ==================================================
+                //                  ALT 1 - natrium?
+                // ==================================================
+
+                const ndx = dirX / dirLen;
+                const ndy = dirY / dirLen;
+
+                // normalize velocities
+                const leftVelLen = Math.hypot(rightVel.x, rightVel.y);
+                const rightVelLen = Math.hypot(leftVel.x, leftVel.y);
+
+                // i didn't remember why I swapped leftVel/rightVel, but the shape is now like that
+                const lvx = leftVelLen > 0.0001 ? rightVel.x / leftVelLen : 0;
+                const lvy = leftVelLen > 0.0001 ? rightVel.y / leftVelLen : 0;
+                const rvx = rightVelLen > 0.0001 ? leftVel.x / rightVelLen : 0;
+                const rvy = rightVelLen > 0.0001 ? leftVel.y / rightVelLen : 0;
+
+                const wa = lvx * ndy - lvy * ndx;
+                const wb = rvx * ndy - rvy * ndx;
+
+                // rectangle bounds formed by the 2 notes
+                const minX = Math.min(rightPos.x, leftPos.x);
+                const maxX = Math.max(rightPos.x, leftPos.x);
+                const minY = Math.min(rightPos.y, leftPos.y);
+                const maxY = Math.max(rightPos.y, leftPos.y);
+
+                // bezier control points
+                const c1x = clamp(
+                  leftPos.x * wa + rightPos.x * (1 - wa),
+                  minX,
+                  maxX
+                );
+                const c1y = clamp(rightPos.y, minY, maxY);
+                const c2x = clamp(
+                  rightPos.x * wb + leftPos.x * (1 - wb),
+                  minX,
+                  maxX
+                );
+                const c2y = clamp(leftPos.y, minY, maxY);
+
+                // ==================================================
+                //                 ALT 2 - bright9th
+                // ==================================================
+
+                // // rectangle bounds formed by the 2 notes
+                // const minX = Math.min(rightPos.x, leftPos.x);
+                // const maxX = Math.max(rightPos.x, leftPos.x);
+                // const minY = Math.min(rightPos.y, leftPos.y);
+                // const maxY = Math.max(rightPos.y, leftPos.y);
+
+                // // normalize velocities
+                // const leftVelLen = Math.hypot(leftVel.x, leftVel.y);
+                // const rightVelLen = Math.hypot(rightVel.x, rightVel.y);
+
+                // const lvx = leftVelLen > 0.0001 ? leftVel.x / leftVelLen : 0;
+                // const lvy = leftVelLen > 0.0001 ? leftVel.y / leftVelLen : 0;
+                // const rvx = rightVelLen > 0.0001 ? rightVel.x / rightVelLen : 0;
+                // const rvy = rightVelLen > 0.0001 ? rightVel.y / rightVelLen : 0;
+
+                // // distance scaling
+                // const curveStrength = dirLen * 0.35;
+
+                // // hermite-like bezier handles
+                // const c1x = clamp(rightPos.x - rvx * curveStrength, minX, maxX);
+                // const c1y = clamp(rightPos.y - rvy * curveStrength, minY, maxY);
+                // const c2x = clamp(leftPos.x - lvx * curveStrength, minX, maxX);
+                // const c2y = clamp(leftPos.y - lvy * curveStrength, minY, maxY);
+
+                // ==================================================
+                //              END OF ALTERNATE LOGICS
+                // ==================================================
+
+                ctx.save();
+
+                ctx.scale(tailsCanvasDPR, tailsCanvasDPR);
+                ctx.beginPath();
+                ctx.moveTo(toScreenX(rightPos.x), toScreenY(rightPos.y));
+                ctx.bezierCurveTo(
+                  toScreenX(c1x),
+                  toScreenY(c1y),
+                  toScreenX(c2x),
+                  toScreenY(c2y),
+                  toScreenX(leftPos.x),
+                  toScreenY(leftPos.y)
+                );
+
+                ctx.strokeStyle = "#ffffff";
+                ctx.lineWidth = noteSize * 0.16;
+                ctx.lineCap = "round";
+
+                const appearStart = Math.max(
+                  prevNote.appearTimeSec,
+                  currNote.appearTimeSec
+                );
+                const fadeDuration = 0.05;
+                const fadeAlpha = Math.max(
+                  0,
+                  Math.min(1, (now - appearStart) / fadeDuration)
+                );
+                const dimAlpha =
+                  dn.vel.y * currNote.vy + prevDn.vel.y * prevNote.vy < 0
+                    ? 0.5
+                    : 0;
+
+                ctx.globalAlpha = (0.9 - dimAlpha) * fadeAlpha;
+                ctx.stroke();
+
+                ctx.restore();
+
+                // debug control points
+                ctx.save();
+
+                ctx.scale(tailsCanvasDPR, tailsCanvasDPR);
+                const debugRadius = noteSize * 0.24;
+                ctx.fillStyle = "#ff4040";
+                ctx.globalAlpha = 1;
+                ctx.beginPath();
+                ctx.arc(
+                  toScreenX(c1x),
+                  toScreenY(c1y),
+                  debugRadius,
+                  0,
+                  Math.PI * 2
+                );
+                ctx.fill();
+
+                ctx.fillStyle = "#40a0ff";
+                ctx.beginPath();
+                ctx.arc(
+                  toScreenX(c2x),
+                  toScreenY(c2y),
+                  debugRadius,
+                  0,
+                  Math.PI * 2
+                );
+                ctx.fill();
+
+                ctx.restore();
+              }
+            }
+          }
+
+          prevDn = dn;
         }
         lastNow.current = now;
 
