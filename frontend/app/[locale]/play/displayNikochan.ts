@@ -34,23 +34,21 @@ export class DisplayNikochan {
   #n: NoteInGame;
   #dn: DisplayNote;
   #c: Context;
-  #now: DOMHighResTimeStamp;
-  #fadeinStart: DOMHighResTimeStamp;
-  #fadeoutStart: DOMHighResTimeStamp | null;
+  #fadeinStart: number;
+  #fadeoutStart: number | null;
   #tailVel: Pos;
 
   constructor(n: NoteInGame, dn: DisplayNote, c: Context) {
     this.#n = n;
     this.#dn = dn;
     this.#c = c;
-    this.#now = performance.now();
 
     // 出現直後は100msのフェードインをする。
     // ただし最初から画面外にいるものについてはフェードインしない(開始時刻を-Infinityにすることで完了状態にする)
     if (this.isOffScrean) {
       this.#fadeinStart = -Infinity;
     } else {
-      this.#fadeinStart = this.#now;
+      this.#fadeinStart = c.now;
     }
     this.#fadeoutStart = null;
     this.#tailVel = { x: 0, y: 0 };
@@ -58,10 +56,9 @@ export class DisplayNikochan {
   update(dn: DisplayNote, c: Context) {
     this.#dn = dn;
     this.#c = c;
-    this.#now = performance.now();
     if (this.#n.done !== 0) {
       if (this.#fadeoutStart === null) {
-        this.#fadeoutStart = this.#now;
+        this.#fadeoutStart = c.now;
       }
     }
   }
@@ -199,10 +196,10 @@ export class DisplayNikochan {
   }
 
   get fadeinFactor() {
-    return Math.min(1, (this.#now - this.#fadeinStart) / 100);
+    return Math.min(1, (this.#c.now - this.#fadeinStart) / 0.1);
   }
   get fadeoutFactor() {
-    return Math.min(1, (this.#now - this.#fadeoutStart!) / 300);
+    return Math.min(1, (this.#c.now - this.#fadeoutStart!) / 0.3);
   }
   get globalAlpha() {
     if (this.#n.done === 0) {

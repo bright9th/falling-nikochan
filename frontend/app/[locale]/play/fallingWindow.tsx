@@ -31,6 +31,7 @@ type Props = {
   playbackRate: number;
   setShouldHideBPMSign: (hide: boolean) => void;
   shouldHideBPMSign: boolean;
+  animationMode: AnimationMode;
 } & (
   | {
       showTSOffset: boolean;
@@ -52,6 +53,7 @@ type Props = {
       timeOfsEstimator?: undefined;
     }
 );
+export type AnimationMode = "state" | "time";
 export type FlashPos = { targetX: number } | { clientX: number } | undefined;
 export default function FallingWindow(props: Props) {
   const {
@@ -269,12 +271,13 @@ export default function FallingWindow(props: Props) {
       displayNikochan.current.push(null);
     }
   }, [notes]);
+  const now = useRef<number>(0);
   const lastNow = useRef<number>(0);
   if (runExecutedIndex.current !== rerenderIndex) {
     // performance.mark("nikochan-rerender");
     runExecutedIndex.current = rerenderIndex;
     renderFpsCounter.current.push(performance.now());
-    const now = getCurrentTimeSec();
+    now.current = getCurrentTimeSec() || 0;
     if (
       playing &&
       marginX !== undefined &&
@@ -296,7 +299,7 @@ export default function FallingWindow(props: Props) {
         marginY,
         playbackRate,
         rem,
-        now,
+        now: now.current,
         tailsCanvasDPR,
         nikochanCanvasDPR: nikochanCanvasDPR.current,
         nikochanBitmap: nikochanBitmap.current,
@@ -304,7 +307,7 @@ export default function FallingWindow(props: Props) {
       };
 
       displayNotes.current = notes
-        .map((n) => displayNote(n, now))
+        .map((n) => displayNote(n, now.current))
         .filter((n) => n !== null);
       displayNotes.current.reverse(); // 奥に表示されるものが最初
 
@@ -335,7 +338,7 @@ export default function FallingWindow(props: Props) {
           dns.drawNikochan(nctx);
           dns.drawTail(ctx);
         }
-        lastNow.current = now;
+        lastNow.current = now.current;
 
         if (props.shouldHideBPMSign !== shouldHideBPMSign) {
           setTimeout(() => props.setShouldHideBPMSign(shouldHideBPMSign));
@@ -472,6 +475,8 @@ export default function FallingWindow(props: Props) {
           displayNotes={displayNotes.current}
           notes={notes}
           noteSize={noteSize}
+          animationMode={props.animationMode}
+          animationTime={props.animationMode === "time" ? now.current : 0}
           boxSize={boxSize}
           marginX={marginX}
           marginY={marginY}
@@ -581,6 +586,8 @@ interface MProps {
   displayNotes: DisplayNote[];
   notes: NoteInGame[];
   noteSize: number;
+  animationMode: AnimationMode;
+  animationTime: number;
   boxSize: number;
   marginX: number;
   marginY: number;
@@ -594,6 +601,8 @@ const NikochansMemo = memo(function Nikochans(props: MProps) {
       displayNote={d}
       note={props.notes[d.id]}
       noteSize={props.noteSize}
+      animationMode={props.animationMode}
+      animationTime={props.animationTime}
       marginX={props.marginX}
       marginY={props.marginY}
       boxSize={props.boxSize}
@@ -607,6 +616,8 @@ interface NProps {
   displayNote: DisplayNote;
   noteSize: number;
   note: NoteInGame;
+  animationMode: AnimationMode;
+  animationTime: number;
   marginX: number;
   marginY: number;
   boxSize: number;
@@ -631,6 +642,9 @@ function Nikochan(props: NProps) {
           big={displayNote.bigDone}
           chain={displayNote.chain || 0}
           blur={props.blur}
+          animationMode={props.animationMode}
+          animationTime={props.animationTime}
+          hitTimeSec={note.hitTimeSec}
         />
       )}
       {displayNote.chain && [1, 2].includes(displayNote.done) && (
@@ -646,6 +660,9 @@ function Nikochan(props: NProps) {
           chain={displayNote.chain || 0}
           particleAssets={props.particleAssets}
           blur={props.blur}
+          animationMode={props.animationMode}
+          animationTime={props.animationTime}
+          hitTimeSec={note.hitTimeSec}
         />
       )}
     </>
@@ -659,15 +676,21 @@ interface RProps {
   big: boolean;
   chain: number;
   blur: boolean;
+  animationMode: AnimationMode;
+  animationTime: number;
+  hitTimeSec: number;
 }
 function Ripple(props: RProps) {
   const ref = useRef<HTMLDivElement>(null!);
   const ref2 = useRef<HTMLDivElement>(null!);
+  const anim1 = useRef<Animation | null>(null);
+  const anim2 = useRef<Animation | null>(null);
   const animateDone = useRef<boolean>(false);
   const { noteSize } = props;
   const rippleWidth = noteSize * 2.5 * (props.big ? 1.5 : 1);
   const rippleHeight = rippleWidth * 0.7;
   useEffect(() => {
+    if (props.animationMode !== "state") return;
     if (!animateDone.current) {
       [ref, ref2].forEach((r, i) => {
         r.current.animate(
@@ -686,7 +709,45 @@ function Ripple(props: RProps) {
       });
     }
     animateDone.current = true;
-  }, [noteSize]);
+  }, [props.animationMode, noteSize]);
+  useEffect(() => {
+    if (props.animationMode !== "time") return;
+    anim1.current = ref.current.animate(
+      [
+        { transform: "scale(0)", opacity: 0.5 },
+        { transform: "scale(0.8)", opacity: 0.5, offset: 0.8 },
+        { transform: "scale(1)", opacity: 0 },
+      ],
+      {
+        duration: 350,
+        fill: "forwards",
+        easing: "ease-out",
+      }
+    );
+    anim1.current.pause();
+    anim2.current = ref2.current.animate(
+      [
+        { transform: "scale(0)", opacity: 0.5 },
+        { transform: "scale(0.8)", opacity: 0.5, offset: 0.8 },
+        { transform: "scale(1)", opacity: 0 },
+      ],
+      {
+        duration: 150,
+        delay: 200,
+        fill: "forwards",
+        easing: "ease-out",
+      }
+    );
+    anim2.current.pause();
+  }, [props.animationMode, noteSize]);
+  useEffect(() => {
+    if (props.animationMode !== "time" || !anim1.current || !anim2.current)
+      return;
+    const elapsedMs = (props.animationTime - props.hitTimeSec) * 1000;
+    anim1.current.currentTime = elapsedMs;
+    anim2.current.currentTime = elapsedMs;
+  }, [props.animationMode, props.animationTime, props.hitTimeSec]);
+
   return (
     <div
       className={clsx(
@@ -733,16 +794,22 @@ interface PProps {
   chain: number;
   particleAssets: RefObject<string[]>;
   blur: boolean;
+  animationMode: AnimationMode;
+  animationTime: number;
+  hitTimeSec: number;
 }
 function Particle(props: PProps) {
   const ref = useRef<HTMLImageElement>(null!);
   const refBig = useRef<HTMLImageElement | null>(null);
+  const anim = useRef<Animation | null>(null);
+  const animBig = useRef<Animation | null>(null);
   const animateDone = useRef<boolean>(false);
   const bigAnimateDone = useRef<boolean>(false);
   const { noteSize, particleNum } = props;
   const maxSize = noteSize * 2;
   const bigSize = noteSize * 3.5;
   useEffect(() => {
+    if (props.animationMode !== "state") return;
     if (!animateDone.current) {
       const angle = Math.random() * 360;
       const angleVel = Math.random() * 120 - 60;
@@ -780,7 +847,58 @@ function Particle(props: PProps) {
       );
       bigAnimateDone.current = true;
     }
-  }, [props.big]);
+  }, [props.animationMode, props.big]);
+  useEffect(() => {
+    if (props.animationMode !== "time") return;
+    const angle = Math.random() * 360;
+    const angleVel = Math.random() * 120 - 60;
+    anim.current = ref.current.animate(
+      [
+        { transform: `scale(0.3) rotate(${angle}deg)`, opacity: 0 },
+        {
+          transform: `scale(0.8) rotate(${angle + angleVel * 0.8}deg)`,
+          opacity: 0.8,
+          offset: 0.8,
+        },
+        {
+          transform: `scale(1) rotate(${angle + angleVel}deg)`,
+          opacity: 0,
+        },
+      ],
+      {
+        duration: 500,
+        fill: "forwards",
+        easing: "ease-out",
+      }
+    );
+    anim.current.pause();
+    if (props.big && refBig.current) {
+      const angleBig = Math.random() * 360;
+      const angleVel = Math.random() * 120 - 60;
+      animBig.current = refBig.current?.animate(
+        [
+          { transform: `scale(0.3) rotate(${angleBig}deg)`, opacity: 0 },
+          {
+            transform: `scale(0.8) rotate(${angleBig + angleVel * 0.8}deg)`,
+            opacity: 0.6,
+            offset: 0.8,
+          },
+          {
+            transform: `scale(1) rotate(${angleBig + angleVel}deg)`,
+            opacity: 0,
+          },
+        ],
+        { duration: 500, fill: "forwards", easing: "ease-out" }
+      );
+      animBig.current.pause();
+    }
+  }, [props.animationMode, props.big]);
+  useEffect(() => {
+    if (props.animationMode !== "time" || !anim.current) return;
+    const elapsedMs = (props.animationTime - props.hitTimeSec) * 1000;
+    anim.current.currentTime = elapsedMs;
+    if (animBig.current) animBig.current.currentTime = elapsedMs;
+  }, [props.animationMode, props.animationTime, props.hitTimeSec]);
 
   return (
     <div

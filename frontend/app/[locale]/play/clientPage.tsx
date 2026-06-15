@@ -1052,6 +1052,7 @@ function Play(props: Props) {
               audioLatency={enableHitSE ? audioLatency : null}
               posOfs={posOfs}
               timeOfsEstimator={timeOfsEstimator}
+              animationMode="time"
             />
           )}
           <div
