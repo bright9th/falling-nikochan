@@ -34,6 +34,7 @@ interface MessageProps {
   maxHeight: number;
   back?: () => void;
   start: () => void;
+  render: () => void;
   exit: () => void;
   auto: boolean;
   setAuto: (a: boolean) => void;
@@ -133,6 +134,11 @@ export function ReadyMessage(props: MessageProps) {
             text={t("start")}
             keyName={props.isTouch ? undefined : "Space"}
             onClick={() => props.start()}
+          />
+          <Button
+            text={"Render"}
+            keyName={props.isTouch ? undefined : "="}
+            onClick={() => props.render()}
           />
           <Button
             text={t("exit")}
@@ -488,6 +494,50 @@ export function InitErrorMessage(props: MessageProps3) {
           text={t("exit")}
           keyName={props.isTouch ? undefined : "Esc"}
           onClick={() => props.exit()}
+        />
+      </p>
+    </CenterBox>
+  );
+}
+
+interface MessageProps4 {
+  className?: string;
+  hidden: boolean;
+  isTouch: boolean;
+  videoUrl: string;
+  reset: () => void;
+  exit: () => void;
+}
+export function RenderResultMessage(props: MessageProps4) {
+  const t = useTranslations("play.message");
+  return (
+    <CenterBox classNameOuter={props.className} hidden={props.hidden}>
+      <p className="fn-heading-box">&lt; Render Complete &gt;</p>
+      <video
+        controls
+        src={props.videoUrl}
+        className="h-[50vh] max-w-[900px] mb-3"
+      />
+      <p className="flex flex-row justify-center">
+        <Button
+          text={t("reset")}
+          keyName={props.isTouch ? undefined : "Space"}
+          onClick={props.reset}
+        />
+        <Button
+          text="export"
+          keyName={props.isTouch ? undefined : "="}
+          onClick={() => {
+            const a = document.createElement("a");
+            a.href = props.videoUrl;
+            a.download = "render.webm";
+            a.click();
+          }}
+        />
+        <Button
+          text={t("exit")}
+          keyName={props.isTouch ? undefined : "Esc"}
+          onClick={props.exit}
         />
       </p>
     </CenterBox>

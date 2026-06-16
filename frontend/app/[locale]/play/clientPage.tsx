@@ -33,7 +33,12 @@ import { YouTubePlayer } from "@/common/youtube.js";
 import { ChainDisp, ScoreDisp } from "./score.js";
 import RhythmicalSlime from "./rhythmicalSlime.js";
 import useGameLogic from "./gameLogic.js";
-import { InitErrorMessage, ReadyMessage, StopMessage } from "./messageBox.js";
+import {
+  InitErrorMessage,
+  ReadyMessage,
+  RenderResultMessage,
+  StopMessage,
+} from "./messageBox.js";
 import StatusBox from "./statusBox.js";
 import { useResizeDetector } from "react-resize-detector";
 import { ChartBrief } from "@falling-nikochan/chart";
@@ -66,6 +71,8 @@ import { getQueryOptions, QueryOptions } from "./queryOption.js";
 import { ButtonHighlight } from "@/common/button.jsx";
 import { APIError } from "@/common/apiError.js";
 import { useFlash } from "./useFlash.js";
+import { ArrayBufferTarget, Muxer } from "mp4-muxer";
+import { toCanvas } from "html-to-image";
 
 export function InitPlay({ locale }: { locale: string }) {
   const te = useTranslations("error");
@@ -305,6 +312,16 @@ function Play(props: Props) {
   useEffect(reloadBestScore, [reloadBestScore]);
 
   const [chartPlaying, setChartPlaying] = useState<boolean>(false);
+  const [chartRendering, setChartRendering] = useState<boolean>(false);
+  const prepareRendering = useRef<boolean>(false);
+  const finishRendering = useRef<boolean>(false);
+  const renderTimeSec = useRef<number | null>(null);
+  const [renderProgress, setRenderProgress] = useState<number>(0);
+  const [renderFrame, setRenderFrame] = useState<number>(0);
+  const [renderTotalFrames, setRenderTotalFrames] = useState<number>(0);
+  const [showRendering, setShowRendering] = useState<boolean>(false);
+  const [showRenderResult, setShowRenderResult] = useState<boolean>(false);
+  const [renderedVideoUrl, setRenderedVideoUrl] = useState<string | null>(null);
   const [wasAutoPlay, setWasAutoPlay] = useState<boolean>(false); // start時点でautoだったかどうか
   const [oldPlaybackRate, setOldPlaybackRate] = useState<number>(1);
   const [oldUserBegin, setOldUserBegin] = useState<number | null>(null);
@@ -314,6 +331,9 @@ function Play(props: Props) {
     () => exitable && exitable < performance.now(),
     [exitable]
   );
+  useEffect(() => {
+    console.log("showRenderResult: " + showRenderResult);
+  }, [showRenderResult]);
 
   const ytPlayer = useRef<YouTubePlayer>(undefined);
   const [ytVolume, setYtVolume_] = useState<number>(100);
@@ -355,6 +375,15 @@ function Play(props: Props) {
   const changePlaybackRate = (rate: number) => {
     ytPlayer.current?.setPlaybackRate(rate);
   };
+  const waitForSeek = async (target: number) => {
+    while (true) {
+      const current = ytPlayer.current?.getCurrentTime() ?? 0;
+      if (Math.abs(current - target) < 0.01) {
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
 
   const [enableIOSThru, setEnableIOSThru_] = useState<boolean>(false);
   const {
@@ -393,9 +422,12 @@ function Play(props: Props) {
   const filteredStartTimeStamp = useRef<DOMHighResTimeStamp | null>(null);
   const timeStampLastAdjusted = useRef<DOMHighResTimeStamp>(0);
   const getCurrentTimeSec = useCallback(() => {
+    if (chartRendering) {
+      return renderTimeSec.current ?? 0;
+    }
     if (ytPlayer.current?.getCurrentTime && chartSeq && chartPlaying) {
       const ytNow =
-        ytPlayer.current?.getCurrentTime() -
+        ytPlayer.current.getCurrentTime() -
         chartSeq.offset -
         offsetPlusLatency * playbackRate;
       rawStartTimeStamp.current =
@@ -414,7 +446,7 @@ function Play(props: Props) {
       timeStampLastAdjusted.current = performance.now();
       return now;
     }
-  }, [chartSeq, chartPlaying, offsetPlusLatency, playbackRate]);
+  }, [chartRendering, chartSeq, chartPlaying, offsetPlusLatency, playbackRate]);
 
   const { barFlash, flash } = useFlash();
 
@@ -476,7 +508,10 @@ function Play(props: Props) {
   const [showResult, setShowResult] = useState<boolean>(false);
   const [resultDate, setResultDate] = useState<Date>();
 
-  const reset = useCallback(() => setShowReady(true), []);
+  const reset = useCallback(() => {
+    setShowReady(true);
+    setShowRenderResult(false);
+  }, []);
   const start = useCallback(() => {
     // Space(スタートボタン)が押されたとき
     switch (ytPlayer.current?.getPlayerState()) {
@@ -501,6 +536,125 @@ function Play(props: Props) {
     playSE("hit"); // ユーザー入力のタイミングで鳴らさないとaudioが有効にならないsafariの対策
     // 譜面のリセットと開始はonStart()で処理
   }, [begin, playSE]);
+  const render = useCallback(async () => {
+    if (!chartSeq || !ref.current || !ytPlayer.current) return;
+    setChartRendering(true);
+    setShowRendering(true);
+    setShowReady(false);
+    setShowStopped(false);
+    setShowResult(false);
+    setShowRenderResult(false);
+    const fps = 30;
+    const startTime = userBegin ?? ytBegin;
+    const endTime = chartSeq.ytEndSec;
+    const totalFrames = Math.ceil((endTime - startTime) * fps);
+    setRenderTotalFrames(totalFrames);
+    const width = ref.current.clientWidth & ~1;
+    const height = ref.current.clientHeight & ~1;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d")!;
+    const muxer = new Muxer({
+      target: new ArrayBufferTarget(),
+      video: {
+        codec: "vp9",
+        width,
+        height,
+      },
+      fastStart: "in-memory",
+    });
+    const encoder = new VideoEncoder({
+      output(chunk, meta) {
+        muxer.addVideoChunk(chunk, meta);
+      },
+      error(e) {
+        console.error(e);
+      },
+    });
+    encoder.configure({
+      codec: "vp09.00.10.08",
+      width,
+      height,
+      bitrate: 12_000_000,
+      framerate: fps,
+    });
+    prepareRendering.current = true;
+    function waitForPlayerReady(player: YouTubePlayer): Promise<void> {
+      return new Promise((resolve) => {
+        const listener = (event: any) => {
+          if (event.data === 1) {
+            player.removeEventListener("onStateChange", listener);
+            resolve();
+          }
+        };
+        player.addEventListener("onStateChange", listener);
+      });
+    }
+    ytPlayer.current?.playVideo();
+    await waitForPlayerReady(ytPlayer.current);
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    ytPlayer.current?.pauseVideo();
+    ytPlayer.current?.seekTo(begin, true);
+    const now = begin - chartSeq.offset - offsetPlusLatency * playbackRate;
+    resetNotesAll(
+      chartSeq.notes.map((n) => ({
+        ...n,
+        done: 0,
+        bigDone: false,
+      })),
+      now
+    );
+    lateTimes.current = [];
+    prepareRendering.current = false;
+    for (let frame = 0; frame < totalFrames; frame++) {
+      setRenderFrame(frame);
+      setRenderProgress(frame / totalFrames);
+      const ytTime = startTime + frame / fps;
+      renderTimeSec.current =
+        ytTime - chartSeq.offset - offsetPlusLatency * playbackRate;
+      ytPlayer.current?.seekTo(ytTime, true);
+      await waitForSeek(ytTime);
+      await new Promise(requestAnimationFrame);
+      const shot = await toCanvas(ref.current, {
+        filter: (node) =>
+          !(node instanceof Element && node.closest(".render-ignore")),
+      });
+      ctx.clearRect(0, 0, width, height);
+      ctx.drawImage(shot, 0, 0, width, height);
+      const vf = new VideoFrame(canvas, {
+        timestamp: Math.round(frame * (1_000_000 / fps)),
+      });
+      encoder.encode(vf);
+      vf.close();
+      if (finishRendering.current) break;
+    }
+    await encoder.flush();
+    muxer.finalize();
+    const buffer = muxer.target.buffer;
+    const blob = new Blob([buffer], {
+      type: "video/webm",
+    });
+    const url = URL.createObjectURL(blob);
+    setRenderedVideoUrl(url);
+    setChartRendering(false);
+    setShowRendering(false);
+    finishRendering.current = false;
+    renderTimeSec.current = null;
+    setRenderProgress(0);
+    setRenderFrame(0);
+    setRenderTotalFrames(0);
+    setShowRenderResult(true);
+    setExitable((ex) => Math.max(ex || 0, performance.now() + 1000));
+  }, [chartSeq, ytBegin, userBegin, ytPlayer.current]);
+  const exportRender = useCallback(() => {
+    if (renderedVideoUrl) {
+      const a = document.createElement("a");
+      a.href = renderedVideoUrl;
+      a.download = "render.webm";
+      a.click();
+    }
+  }, [renderedVideoUrl]);
   const stop = useCallback(() => {
     // Escが押された時&Result表示時
     if (chartPlaying) {
@@ -516,7 +670,19 @@ function Play(props: Props) {
         }, 1000);
       }
     }
-  }, [chartPlaying, ytVolume]);
+    if (chartRendering) {
+      finishRendering.current = true;
+      // setChartRendering(false);
+      // setShowRendering(false);
+      // finishRendering.current = false;
+      // renderTimeSec.current = null;
+      // setRenderProgress(0);
+      // setRenderFrame(0);
+      // setRenderTotalFrames(0);
+      // setShowStopped(true);
+      // setExitable((ex) => Math.max(ex || 0, performance.now() + 1000));
+    }
+  }, [chartPlaying, chartRendering, ytVolume]);
   const exit = useCallback(() => {
     // router.replace(`/share/${cid}`);
     if (isStandalone() || isInsideFrame()) {
@@ -776,7 +942,7 @@ function Play(props: Props) {
       setLoadingAfterReady(false);
       setNeedManualStart(false);
       setShowResult(false);
-      setChartPlaying(true);
+      setChartPlaying(!chartRendering);
       setWasAutoPlay(auto);
       setOldPlaybackRate(playbackRate);
       setOldUserBegin(userBegin);
@@ -810,6 +976,7 @@ function Play(props: Props) {
     playbackRate,
     userBegin,
     offsetPlusLatency,
+    chartRendering,
   ]);
   const onStop = useCallback(() => {
     console.log("stop ->", ytPlayer.current?.getPlayerState());
@@ -847,7 +1014,7 @@ function Play(props: Props) {
       if (e.repeat) {
         return;
       }
-      if (e.key === " " && showReady && !chartPlaying) {
+      if (e.key === " " && showReady && !(chartPlaying || chartRendering)) {
         start();
         e.preventDefault();
       } else if (
@@ -856,8 +1023,29 @@ function Play(props: Props) {
       ) {
         setShowReady(true);
         e.preventDefault();
+      } else if (e.key === " " && showRenderResult && exitableNow()) {
+        setShowRenderResult(false);
+        setShowReady(true);
+        e.preventDefault();
+      } else if (
+        e.key === "=" &&
+        showReady &&
+        !(chartPlaying || chartRendering)
+      ) {
+        render();
+        e.preventDefault();
+      } else if (
+        e.key === "=" &&
+        showRenderResult &&
+        !(chartPlaying || chartRendering)
+      ) {
+        exportRender();
+        e.preventDefault();
       } else if ((e.key === "Escape" || e.key === "Esc") && chartPlaying) {
         stop();
+        e.preventDefault();
+      } else if ((e.key === "Escape" || e.key === "Esc") && chartRendering) {
+        finishRendering.current = true;
         e.preventDefault();
       } else if ((e.key === "Escape" || e.key === "Esc") && exitableNow()) {
         exit();
@@ -866,7 +1054,7 @@ function Play(props: Props) {
         seekBack();
       } else if (e.key === "Right" || e.key === "ArrowRight") {
         seekForward();
-      } else if (isReadyAll && !(chartPlaying && auto)) {
+      } else if (isReadyAll && !((chartPlaying && auto) || chartRendering)) {
         const candidate = hit(inputTypes.keyboard);
         if (candidate) {
           flash({ targetX: candidate.note.targetX });
@@ -892,6 +1080,9 @@ function Play(props: Props) {
     exitableNow,
     seekBack,
     seekForward,
+    chartRendering,
+    render,
+    showRenderResult,
   ]);
 
   return (
@@ -902,7 +1093,7 @@ function Play(props: Props) {
       tabIndex={0}
       ref={ref}
       onPointerDown={(e) => {
-        if (isReadyAll && !(chartPlaying && auto)) {
+        if (isReadyAll && !((chartPlaying && auto) || chartRendering)) {
           flash({ clientX: e.clientX });
           switch (e.pointerType) {
             case "mouse":
@@ -1037,7 +1228,7 @@ function Play(props: Props) {
               className="absolute inset-0 isolate z-play-fw"
               notes={notesAll}
               getCurrentTimeSec={getCurrentTimeSec}
-              playing={chartPlaying}
+              playing={chartPlaying || chartRendering}
               setRunFPS={setRunFps}
               setRenderFPS={setRenderFps}
               barFlash={barFlash}
@@ -1087,7 +1278,7 @@ function Play(props: Props) {
             <ChainDisp
               chain={chain}
               maxChain={maxChain}
-              playing={chartPlaying}
+              playing={chartPlaying || chartRendering}
               fc={judgeCount[2] + judgeCount[3] + judgeCount[4] === 0}
               notesTotal={notesAll.length}
             />
@@ -1157,6 +1348,26 @@ function Play(props: Props) {
               )}
             </CenterBox>
           )}
+          {showRendering && (
+            <CenterBox
+              classNameOuter="render-ignore isolate z-[999999]"
+              onPointerDown={(e) => e.stopPropagation()}
+              onPointerUp={(e) => e.stopPropagation()}
+            >
+              <p className="fn-heading-box">
+                {prepareRendering.current
+                  ? "Preparing Render"
+                  : finishRendering.current
+                    ? "Finishing Render"
+                    : "Rendering Chart"}
+              </p>
+              <p>
+                {renderFrame.toLocaleString()} /
+                {renderTotalFrames.toLocaleString()}
+              </p>
+              <p>{Math.floor(renderProgress * 100)}%</p>
+            </CenterBox>
+          )}
           {errorMsg && (
             <InitErrorMessage
               className="isolate z-play-error"
@@ -1176,6 +1387,7 @@ function Play(props: Props) {
               isTouch={isTouch}
               back={showResult ? () => setShowReady(false) : undefined}
               start={start}
+              render={render}
               exit={exit}
               auto={auto}
               setAuto={setAuto}
@@ -1274,6 +1486,16 @@ function Play(props: Props) {
               exit={exit}
             />
           )}
+          {showRenderResult && renderedVideoUrl && (
+            <RenderResultMessage
+              className="isolate z-play-stop"
+              hidden={showReady}
+              isTouch={isTouch}
+              videoUrl={renderedVideoUrl}
+              reset={reset}
+              exit={exit}
+            />
+          )}
         </div>
       </div>
       <div
@@ -1308,7 +1530,7 @@ function Play(props: Props) {
             }}
             signature={chartSeq.signature}
             getCurrentTimeSec={getCurrentTimeSec}
-            playing={chartPlaying}
+            playing={chartPlaying || chartRendering}
             bpmChanges={chartSeq?.bpmChanges}
             playbackRate={playbackRate}
           />
@@ -1323,7 +1545,7 @@ function Play(props: Props) {
                 : "opacity-100"
               : "opacity-0"
           )}
-          chartPlaying={chartPlaying}
+          chartPlaying={chartPlaying || chartRendering}
           chartSeq={chartSeq || null}
           getCurrentTimeSec={getCurrentTimeSec}
           hasExplicitSpeedChange={
