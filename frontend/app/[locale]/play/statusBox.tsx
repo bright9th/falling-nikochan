@@ -9,6 +9,7 @@ import GrinningFaceWithTightlyClosedEyesOpenMouth from "@icon-park/react/lib/ico
 import SmilingFace from "@icon-park/react/lib/icons/SmilingFace";
 import { useTranslations } from "next-intl";
 import { ReactNode } from "react";
+import { AnimationMode } from "./clientPage";
 
 interface Props {
   className?: string;
@@ -25,11 +26,15 @@ interface Props {
   showBestScore: boolean;
   countMode: "bestCount" | "grayZero" | "judge";
   showResultDiff: boolean;
+  animationMode?: AnimationMode;
 }
 export default function StatusBox(props: Props) {
   const t = useTranslations("play.status");
   const { screenWidth, screenHeight, rem, statusScale } = useDisplayMode();
   const isMobile = screenWidth < screenHeight;
+
+  const totalJudgeCount = props.judgeCount.reduce((a, b) => a + b, 0);
+  const totalBestCount = props.bestCount?.reduce((a, b) => a + b, 0);
 
   return (
     <Box
@@ -50,89 +55,131 @@ export default function StatusBox(props: Props) {
         padding: isMobile ? "0.75em" : "1.25em",
       }}
     >
-      {props.showBestScore && (
-        <div
-          className={clsx(
-            isMobile
-              ? clsx("absolute left-[10%] top-[-2em]")
-              : clsx("absolute inset-x-0 top-[-1em]"),
-            "flex flex-row items-baseline",
-            "w-max m-auto px-[0.5em] py-[0.2em] rounded-[0.75em]",
-            "shadow-xs z-3",
-            props.bestCount
-              ? clsx("fn-inverted fn-status-best")
-              : clsx("fn-plain", "text-dim")
-          )}
-          style={{
-            fontSize: isMobile ? "0.8em" : undefined,
-          }}
-        >
-          <span className="fn-glass-1" />
-          <span className="fn-glass-2" />
-          <span>{t("bestScore")}:</span>
-          <span
-            className="inline-block text-right"
+      {(props.animationMode ? props.animationMode === "state" : true) &&
+        props.showBestScore && (
+          <div
+            className={clsx(
+              isMobile
+                ? clsx("absolute left-[10%] top-[-2em]")
+                : clsx("absolute inset-x-0 top-[-1em]"),
+              "flex flex-row items-baseline",
+              "w-max m-auto px-[0.5em] py-[0.2em] rounded-[0.75em]",
+              "shadow-xs z-3",
+              props.bestCount
+                ? clsx("fn-inverted fn-status-best")
+                : clsx("fn-plain", "text-dim")
+            )}
             style={{
-              width: "2.2em",
-              fontSize: "1.8em",
-              lineHeight: 1,
+              fontSize: isMobile ? "0.8em" : undefined,
             }}
           >
-            {props.best === null ? "-" : Math.floor(props.best)}
-          </span>
-          <span
-            className="inline-block"
-            style={{ width: "1.6em", fontSize: "1.2em" }}
+            <span className="fn-glass-1" />
+            <span className="fn-glass-2" />
+            <span>{t("bestScore")}:</span>
+            <span
+              className="inline-block text-right"
+              style={{
+                width: "2.2em",
+                fontSize: "1.8em",
+                lineHeight: 1,
+              }}
+            >
+              {props.best === null ? "-" : Math.floor(props.best)}
+            </span>
+            <span
+              className="inline-block"
+              style={{ width: "1.6em", fontSize: "1.2em" }}
+            >
+              .
+              {props.best === null
+                ? "--"
+                : (Math.floor(props.best * 100) % 100)
+                    .toString()
+                    .padStart(2, "0")}
+            </span>
+          </div>
+        )}
+      {(props.animationMode ?? "state") === "state" ? (
+        ["good", "ok", "bad", "miss"].map((name, ji) => (
+          <StatusItem
+            wide={!isMobile && props.showResultDiff && !!props.bestCount}
+            key={ji}
           >
-            .
-            {props.best === null
-              ? "--"
-              : (Math.floor(props.best * 100) % 100)
-                  .toString()
-                  .padStart(2, "0")}
-          </span>
-        </div>
-      )}
-      {["good", "ok", "bad", "miss"].map((name, ji) => (
-        <StatusItem
-          wide={!isMobile && props.showResultDiff && !!props.bestCount}
-          key={ji}
-        >
-          <StatusName>
-            <StatusIcon index={ji} />
-            {t(name)}
-          </StatusName>
-          {props.countMode === "bestCount" && props.bestCount ? (
-            <StatusValue color="inverted">{props.bestCount[ji]}</StatusValue>
+            <StatusName>
+              <StatusIcon index={ji} />
+              {t(name)}
+            </StatusName>
+            {props.countMode === "bestCount" && props.bestCount ? (
+              <StatusValue color="inverted">{props.bestCount[ji]}</StatusValue>
+            ) : props.countMode === "bestCount" ||
+              props.countMode === "grayZero" ? (
+              <StatusValue color="gray">{0}</StatusValue>
+            ) : props.countMode === "judge" ? (
+              <StatusValue>{props.judgeCount[ji]}</StatusValue>
+            ) : (
+              (props.countMode satisfies never)
+            )}
+            {!isMobile && props.showResultDiff && props.bestCount && (
+              <span
+                className={clsx(
+                  "inline-block w-[3.75em] pl-[0.5em] text-center",
+                  "text-orange-400/75 dark:text-sky-500/75"
+                )}
+              >
+                {props.judgeCount[ji] !== props.bestCount[ji] && (
+                  <span style={{ fontSize: "1.2em", lineHeight: 1 }}>
+                    <span className="mr-0.5">
+                      {props.judgeCount[ji] > props.bestCount[ji] ? "+" : "-"}
+                    </span>
+                    <span>
+                      {Math.abs(props.judgeCount[ji] - props.bestCount[ji])}
+                    </span>
+                  </span>
+                )}
+              </span>
+            )}
+          </StatusItem>
+        ))
+      ) : (
+        <StatusItem wide>
+          <StatusName>Notes</StatusName>
+          {props.countMode === "bestCount" && totalBestCount !== undefined ? (
+            <StatusValue color="inverted">{totalBestCount}</StatusValue>
           ) : props.countMode === "bestCount" ||
             props.countMode === "grayZero" ? (
             <StatusValue color="gray">{0}</StatusValue>
           ) : props.countMode === "judge" ? (
-            <StatusValue>{props.judgeCount[ji]}</StatusValue>
+            <StatusValue>{totalJudgeCount}</StatusValue>
           ) : (
             (props.countMode satisfies never)
           )}
-          {!isMobile && props.showResultDiff && props.bestCount && (
-            <span
-              className={clsx(
-                "inline-block w-[3.75em] pl-[0.5em] text-center",
-                "text-orange-400/75 dark:text-sky-500/75"
-              )}
-            >
-              {props.judgeCount[ji] !== props.bestCount[ji] && (
-                <span style={{ fontSize: "1.2em", lineHeight: 1 }}>
-                  <span className="mr-0.5">
-                    {props.judgeCount[ji] > props.bestCount[ji] ? "+" : "-"}
+          {!isMobile &&
+            props.showResultDiff &&
+            totalBestCount !== undefined && (
+              <span
+                className={clsx(
+                  "inline-block w-[3.75em] pl-[0.5em] text-center",
+                  "text-orange-400/75 dark:text-sky-500/75"
+                )}
+              >
+                {totalJudgeCount !== totalBestCount && (
+                  <span style={{ fontSize: "1.2em", lineHeight: 1 }}>
+                    <span className="mr-0.5">
+                      {totalJudgeCount > totalBestCount ? "+" : "-"}
+                    </span>
+                    <span>{Math.abs(totalJudgeCount - totalBestCount)}</span>
                   </span>
-                  <span>
-                    {Math.abs(props.judgeCount[ji] - props.bestCount[ji])}
-                  </span>
-                </span>
-              )}
+                )}
+              </span>
+            )}
+          {!props.isMobile && (
+            <span className="w-[3.75em] pl-[0.5em] flex flex-row items-baseline">
+              <span className="flex-1">/</span>
+              <span>{props.notesTotal - props.bigTotal}</span>
             </span>
           )}
         </StatusItem>
-      ))}
+      )}
       <StatusItem wide disabled={props.bigTotal === 0}>
         <StatusName>{t("big")}</StatusName>
         {props.countMode === "bestCount" && props.bestCount ? (

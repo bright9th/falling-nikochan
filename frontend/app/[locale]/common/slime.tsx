@@ -1,6 +1,7 @@
 "use client";
 import { memo, useEffect, useRef, useState } from "react";
 import clsx from "clsx/lite";
+import { AnimationMode } from "@/play/clientPage";
 
 interface Props {
   className?: string;
@@ -12,6 +13,8 @@ interface Props {
   jumpingMid?: DOMHighResTimeStamp | null;
   duration?: number;
   noLoop?: boolean;
+  animationMode?: AnimationMode;
+  getCurrentTimeSec?: () => number | undefined;
 }
 export function SlimeSVG(props: Props) {
   const [id, setId] = useState<number>(0);
@@ -20,21 +23,67 @@ export function SlimeSVG(props: Props) {
   const [csr, setCSR] = useState<boolean>(false);
   useEffect(() => setCSR(true), []);
 
+  const appearDuration = 0.25;
   const [appearing, setAppearing] = useState<boolean>(false);
+  type TransitionState = {
+    from: number;
+    to: number;
+    start: number;
+  };
+  const [transition, setTransition] = useState<TransitionState>({
+    from: props.hidden ? 0 : 1,
+    to: props.hidden ? 0 : 1,
+    start: 0,
+  });
+  function getProgress(transition: TransitionState, now: number) {
+    const alpha = Math.max(
+      0,
+      Math.min(1, (now - transition.start) / appearDuration)
+    );
+    return transition.from + (transition.to - transition.from) * alpha;
+  }
   // 1テンポ遅らせる
   useEffect(() => {
-    if (csr) {
+    if (!csr) return;
+    if ((props.animationMode ?? "state") === "state") {
       setAppearing(!props.hidden);
+    } else if (props.animationMode === "time") {
+      const now = props.getCurrentTimeSec?.();
+      if (now == null) return;
+      setTransition((prev) => ({
+        from: getProgress(prev, now),
+        to: props.hidden ? 0 : 1,
+        start: now,
+      }));
     }
   }, [csr, props.hidden]);
 
+  const appearanceProgress =
+    props.appearingAnim && props.animationMode === "time"
+      ? (() => {
+          const now = props.getCurrentTimeSec?.();
+          if (now == null) return 0;
+          return getProgress(transition, now);
+        })()
+      : undefined;
+  const style =
+    appearanceProgress == null
+      ? undefined
+      : {
+          opacity: appearanceProgress,
+          transform: `scaleY(${appearanceProgress})`,
+          transformOrigin: "bottom",
+        };
+
   return (
     <span
+      style={style}
       className={clsx(
         props.className
           ? props.className
           : "inline-block w-[1.5em] align-bottom translate-y-[-0.2em] mx-1",
         props.appearingAnim &&
+          (props.animationMode ?? "state") === "state" &&
           clsx(
             "transition-all duration-250 origin-bottom",
             appearing
@@ -54,11 +103,15 @@ const SlimeSVGInner = memo(function SlimeSVGInner(
   const smilAnimationParams = {
     dur: duration + "s",
     repeatCount: props.noLoop ? 1 : "indefinite",
-    begin: props.noLoop ? "indefinite" : "0s",
+    begin:
+      props.noLoop && (props.animationMode ?? "state") === "state"
+        ? "indefinite"
+        : "0s",
     fill: "remove",
   } as const;
   const smilAnimationValues = (params: string[]) =>
     [2, 0, 1, 3, 4, 3, 2, 2].map((i) => params[i]).join(";");
+  const svgRef = useRef<SVGSVGElement>(null);
   const gtAnimRef = useRef<SVGAnimateTransformElement>(null!);
   const gt2AnimRef = useRef<SVGAnimateTransformElement>(null!);
   const p1AnimRef = useRef<SVGAnimateElement>(null!);
@@ -74,6 +127,7 @@ const SlimeSVGInner = memo(function SlimeSVGInner(
   const p9tAnimRef = useRef<SVGAnimateTransformElement>(null!);
   const prevJumpingMid = useRef<DOMHighResTimeStamp | null>(null);
   useEffect(() => {
+    if ((props.animationMode ?? "state") !== "state") return;
     if (
       props.noLoop &&
       props.jumpingMid &&
@@ -108,8 +162,46 @@ const SlimeSVGInner = memo(function SlimeSVGInner(
       prevJumpingMid.current = null;
     }
   }, [props.jumpingMid, duration, props.noLoop]);
+  useEffect(() => {
+    if (
+      props.animationMode !== "time" ||
+      !props.getCurrentTimeSec ||
+      !svgRef.current
+    )
+      return;
+    let raf: number;
+    const update = () => {
+      const now = props.getCurrentTimeSec?.();
+      if (now !== undefined) {
+        if (props.noLoop && props.jumpingMid) {
+          if (
+            prevJumpingMid.current === null ||
+            prevJumpingMid.current < props.jumpingMid
+          )
+            prevJumpingMid.current = props.jumpingMid;
+          else if (!props.jumpingMid) prevJumpingMid.current = null;
+          const jumpStart = Math.max(
+            0,
+            props.jumpingMid / 1000 - (duration * 4) / 8 - now / 1000
+          );
+          const localTime = Math.max(0, Math.min(duration, now - jumpStart));
+          svgRef.current?.pauseAnimations();
+          svgRef.current?.setCurrentTime(localTime);
+        }
+      }
+      raf = requestAnimationFrame(update);
+    };
+    update();
+    return () => cancelAnimationFrame(raf);
+  }, [
+    props.animationMode,
+    props.getCurrentTimeSec,
+    props.noLoop,
+    props.jumpingMid,
+    duration,
+  ]);
   return (
-    <svg viewBox="0 0 31.193595 27.9642" version="1.1">
+    <svg ref={svgRef} viewBox="0 0 31.193595 27.9642" version="1.1">
       {/*width="117.89705" height="105.69147"*/}
       <linearGradient
         id={`slime-linearGradient-${props.id}`}

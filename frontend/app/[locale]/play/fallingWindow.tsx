@@ -16,6 +16,7 @@ import { useDisplayMode } from "@/scale.js";
 import { useRealFPS } from "@/common/fpsCalculator";
 import { DisplayNikochan } from "./displayNikochan";
 import { OffsetEstimator } from "./offsetEstimator";
+import { AnimationMode } from "./clientPage";
 
 type Props = {
   className?: string;
@@ -53,7 +54,6 @@ type Props = {
       timeOfsEstimator?: undefined;
     }
 );
-export type AnimationMode = "state" | "time";
 export type FlashPos = { targetX: number } | { clientX: number } | undefined;
 export default function FallingWindow(props: Props) {
   const {
@@ -64,6 +64,7 @@ export default function FallingWindow(props: Props) {
     setRunFPS,
     noClear,
     playbackRate,
+    animationMode,
   } = props;
   const { width, height, ref } = useResizeDetector();
   const boxSize: number | undefined =
@@ -467,6 +468,8 @@ export default function FallingWindow(props: Props) {
           left={0}
           right="-100%"
           bottom={targetY * boxSize + marginY}
+          animationMode={animationMode}
+          getCurrentTimeSec={getCurrentTimeSec}
         />
       )}
       {boxSize && marginX !== undefined && marginY !== undefined && (
@@ -475,8 +478,8 @@ export default function FallingWindow(props: Props) {
           displayNotes={displayNotes.current}
           notes={notes}
           noteSize={noteSize}
-          animationMode={props.animationMode}
-          animationTime={props.animationMode === "time" ? now.current : 0}
+          animationMode={animationMode}
+          animationTime={animationMode === "time" ? now.current : 0}
           boxSize={boxSize}
           marginX={marginX}
           marginY={marginY}

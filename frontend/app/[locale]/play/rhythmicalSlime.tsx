@@ -17,6 +17,7 @@ import { getSignatureState, getTimeSec } from "@falling-nikochan/chart";
 import { Step, stepAdd } from "@falling-nikochan/chart";
 import { useDisplayMode } from "@/scale.js";
 import { SlimeSVG } from "@/common/slime";
+import { AnimationMode } from "./clientPage";
 
 interface Props {
   className?: string;
@@ -26,6 +27,7 @@ interface Props {
   bpmChanges?: BPMChange[] | BPMChange1[];
   signature: Signature[] | Signature5[];
   playbackRate: number;
+  animationMode: AnimationMode;
 }
 interface SlimeState {
   // 対象の時刻の3/6ステップ前からしゃがむ
@@ -39,7 +41,14 @@ interface SlimeState {
   animDuration: number;
 }
 export default function RhythmicalSlime(props: Props) {
-  const { playing, getCurrentTimeSec, bpmChanges, playbackRate } = props;
+  const {
+    playing,
+    getCurrentTimeSec,
+    bpmChanges,
+    playbackRate,
+    animationMode,
+  } = props;
+
   const step = useRef<Step | null>(null);
   const prevSS = useRef<SignatureState | null>(null);
   const lastPreparingSec = useRef<number | null>(null);
@@ -189,6 +198,7 @@ export default function RhythmicalSlime(props: Props) {
       setCurrentBar(signatureWithBar[0]?.bars[0] || []);
     }
   }, [
+    animationMode,
     bpmChangesWithTimeSec,
     playing,
     getCurrentTimeSec,
@@ -205,7 +215,7 @@ export default function RhythmicalSlime(props: Props) {
     >
       {Array.from(new Array(maxSlimeNum)).map((_, i) => (
         <Slime
-          key={i}
+          key={`${animationMode}${i}`} // Remounted because state persistent sucks (bug hell for animationMode="time" I AM DEAD)
           exists={i < currentBar.length}
           size={i < currentBar.length ? currentBar[i] || 4 : null}
           state={slimeStates.at(i)?.at(0)}
@@ -213,6 +223,7 @@ export default function RhythmicalSlime(props: Props) {
           playUIScale={playUIScale}
           rem={rem}
           playbackRate={playbackRate}
+          animationMode={animationMode}
         />
       ))}
     </div>
@@ -227,6 +238,7 @@ interface PropsS {
   playUIScale: number;
   rem: number;
   playbackRate: number;
+  animationMode: AnimationMode;
 }
 function Slime(props: PropsS) {
   const prevSize = useRef<4 | 8 | 16 | null>(null);
@@ -245,7 +257,7 @@ function Slime(props: PropsS) {
   const [jumpingMidDate, setJumpingMidDate] =
     useState<DOMHighResTimeStamp | null>(null);
   const durationSec = useRef<number>(0);
-  const { getCurrentTimeSec, state, playbackRate } = props;
+  const { getCurrentTimeSec, state, playbackRate, animationMode } = props;
   useEffect(() => {
     const now = getCurrentTimeSec();
     if (now === undefined || state === undefined) {
@@ -255,19 +267,65 @@ function Slime(props: PropsS) {
       prevJumpMid.current = state.jumpMidSec;
       durationSec.current = state.animDuration / playbackRate;
       setJumpingMidDate(
-        performance.now() + ((state.jumpMidSec - now) * 1000) / playbackRate
+        (animationMode === "state" ? performance.now() : now * 1000) +
+          ((state.jumpMidSec - now) * 1000) / playbackRate
       );
     }
-  }, [getCurrentTimeSec, state, playbackRate]);
+  }, [animationMode, getCurrentTimeSec, state, playbackRate]);
+
+  const resizeDuration = 0.15;
+  type TransitionState = {
+    from: number;
+    to: number;
+    start: number;
+  };
+  function getProgress(t: TransitionState, now: number) {
+    const alpha = Math.max(0, Math.min(1, (now - t.start) / resizeDuration));
+    return t.from + (t.to - t.from) * alpha;
+  }
+  function getWidth(size: 4 | 8 | 16) {
+    return (
+      (size === 4 ? 1 : size === 8 ? 0.75 : 0.5) *
+      3.5 *
+      props.rem *
+      props.playUIScale
+    );
+  }
+  const targetWidth = getWidth(size);
+  const [transition, setTransition] = useState<TransitionState>({
+    from: targetWidth,
+    to: targetWidth,
+    start: 0,
+  });
+  useEffect(() => {
+    if (animationMode !== "time") return;
+    const now = getCurrentTimeSec();
+    if (now == null) return;
+    setTransition((prev) => ({
+      from: getProgress(prev, now),
+      to: targetWidth,
+      start: now,
+    }));
+  }, [animationMode, targetWidth, getCurrentTimeSec]);
+  const width =
+    animationMode === "time"
+      ? (() => {
+          const now = getCurrentTimeSec();
+          if (now == null) return transition.to;
+          return getProgress(transition, now);
+        })()
+      : targetWidth;
+
   return (
     <span
-      className="relative transition-all ease-in-out duration-150 "
+      className={clsx(
+        "relative",
+        animationMode === "state"
+          ? "transition-all ease-in-out duration-150"
+          : ""
+      )}
       style={{
-        width:
-          (size === 4 ? 1 : size === 8 ? 0.75 : 0.5) *
-          3.5 *
-          props.rem *
-          props.playUIScale,
+        width,
         marginLeft: 0 * props.playUIScale,
       }}
     >
@@ -278,6 +336,8 @@ function Slime(props: PropsS) {
         jumpingMid={jumpingMidDate}
         duration={durationSec.current}
         noLoop
+        animationMode={animationMode}
+        getCurrentTimeSec={getCurrentTimeSec}
       />
     </span>
   );

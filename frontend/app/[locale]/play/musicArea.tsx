@@ -13,6 +13,7 @@ import { detectOS } from "@/common/pwaInstall";
 import Range from "@/common/range";
 import { useColorThief } from "@/common/colorThief";
 import { ButtonHighlight } from "@/common/button";
+import { AnimationMode } from "./clientPage";
 
 interface Props {
   ready: boolean;
@@ -37,6 +38,7 @@ interface Props {
   enableSE: boolean;
   seVolume: number;
   setSEVolume: (vol: number) => void;
+  animationMode: AnimationMode;
 }
 export function MusicArea(props: Props) {
   const { width, height, ref } = useResizeDetector();
@@ -144,7 +146,7 @@ export function MusicArea(props: Props) {
           <FlexYouTube
             fixedSide="width"
             className={clsx(
-              "z-10",
+              "render-ignore z-10",
               props.isMobile ? "grow-0 shrink-0 w-1/2 mb-1.5" : "w-full mb-1"
             )}
             scale={ytHalf ? 0.5 : 1}
@@ -168,7 +170,8 @@ export function MusicArea(props: Props) {
         )}
         <div
           className={clsx(
-            "flex-1 min-w-0 mr-1 flex flex-col justify-between ",
+            "flex-1 min-w-0 mr-1 flex flex-col",
+            props.animationMode === "time" ? "justify-end" : "justify-between",
             "fg-base",
             props.isMobile && (largeTitle ? "ml-3 mt-4" : "ml-3 mt-2")
           )}

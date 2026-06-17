@@ -182,6 +182,8 @@ export function InitPlay({ locale }: { locale: string }) {
   );
 }
 
+export type AnimationMode = "state" | "time";
+
 interface Props {
   apiErrorMsg?: string | APIError;
   cid?: string;
@@ -551,6 +553,7 @@ function Play(props: Props) {
     setRenderTotalFrames(totalFrames);
     const width = ref.current.clientWidth & ~1;
     const height = ref.current.clientHeight & ~1;
+    const scale = 1;
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
@@ -593,7 +596,7 @@ function Play(props: Props) {
     }
     ytPlayer.current?.playVideo();
     await waitForPlayerReady(ytPlayer.current);
-    await new Promise((resolve) => setTimeout(resolve, 5000));
+    // await new Promise((resolve) => setTimeout(resolve, 5000));
     ytPlayer.current?.pauseVideo();
     ytPlayer.current?.seekTo(begin, true);
     const now = begin - chartSeq.offset - offsetPlusLatency * playbackRate;
@@ -616,9 +619,18 @@ function Play(props: Props) {
       ytPlayer.current?.seekTo(ytTime, true);
       await waitForSeek(ytTime);
       await new Promise(requestAnimationFrame);
+      /* loop skip for time animation test */
+      // if (frame > 0) {
+      //   if (finishRendering.current) break;
+      //   continue;
+      // }
+      /* dom traversing is inefficient
+      but I'm also lazy to make every related elements
+      draw on canvas themselves like Nikochans */
       const shot = await toCanvas(ref.current, {
         filter: (node) =>
           !(node instanceof Element && node.closest(".render-ignore")),
+        pixelRatio: scale,
       });
       ctx.clearRect(0, 0, width, height);
       ctx.drawImage(shot, 0, 0, width, height);
@@ -1163,6 +1175,7 @@ function Play(props: Props) {
             enableSE={enableHitSE && !enableIOSThru}
             seVolume={hitVolume}
             setSEVolume={setHitVolume}
+            animationMode={chartRendering ? "time" : "state"}
           />
           {!isMobile && (
             <>
@@ -1210,6 +1223,7 @@ function Play(props: Props) {
                   showResult &&
                   !showReady
                 }
+                animationMode={chartRendering ? "time" : "state"}
               />
               <div
                 className="grow-0 shrink-1"
@@ -1243,7 +1257,7 @@ function Play(props: Props) {
               audioLatency={enableHitSE ? audioLatency : null}
               posOfs={posOfs}
               timeOfsEstimator={timeOfsEstimator}
-              animationMode="time"
+              animationMode={chartRendering ? "time" : "state"}
             />
           )}
           <div
@@ -1274,6 +1288,8 @@ function Play(props: Props) {
               }
               baseScore={baseScore}
               notesDone={notesDone}
+              animationMode={chartRendering ? "time" : "state"}
+              getCurrentTimeSec={getCurrentTimeSec}
             />
             <ChainDisp
               chain={chain}
@@ -1281,10 +1297,12 @@ function Play(props: Props) {
               playing={chartPlaying || chartRendering}
               fc={judgeCount[2] + judgeCount[3] + judgeCount[4] === 0}
               notesTotal={notesAll.length}
+              animationMode={chartRendering ? "time" : "state"}
+              getCurrentTimeSec={getCurrentTimeSec}
             />
             <div
               className={clsx(
-                "absolute inset-x-0",
+                "render-ignore absolute inset-x-0",
                 "flex justify-center items-center gap-1",
                 isMobile ? "top-10" : "top-0"
               )}
@@ -1330,7 +1348,7 @@ function Play(props: Props) {
           {(!initDone || closeReadyAnim) && (
             <CenterBox
               classNameOuter={clsx(
-                "isolate z-play-loading",
+                "render-ignore isolate z-play-loading",
                 "transition-opacity duration-200 ease-out",
                 showLoading || loadingAfterReady ? "opacity-100" : "opacity-0"
               )}
@@ -1370,7 +1388,7 @@ function Play(props: Props) {
           )}
           {errorMsg && (
             <InitErrorMessage
-              className="isolate z-play-error"
+              className="render-ignore isolate z-play-error"
               msg={errorMsg}
               isTouch={isTouch}
               exit={exit}
@@ -1379,7 +1397,7 @@ function Play(props: Props) {
           {showReady && (
             <ReadyMessage
               className={clsx(
-                "isolate z-play-ready",
+                "render-ignore isolate z-play-ready",
                 "transition-[scale,opacity] duration-200 ease-out",
                 !openReadyAnim && "opacity-0",
                 closeReadyAnim && "opacity-0 scale-0"
@@ -1413,7 +1431,7 @@ function Play(props: Props) {
           )}
           {showResult && (
             <Result
-              className="isolate z-play-result"
+              className="render-ignore isolate z-play-result"
               mainWindowHeight={mainWindowSpace.height!}
               hidden={showReady}
               auto={wasAutoPlay}
@@ -1479,7 +1497,7 @@ function Play(props: Props) {
           )}
           {showStopped && (
             <StopMessage
-              className="isolate z-play-stop"
+              className="render-ignore isolate z-play-stop"
               hidden={showReady || showResult}
               isTouch={isTouch}
               reset={reset}
@@ -1488,7 +1506,7 @@ function Play(props: Props) {
           )}
           {showRenderResult && renderedVideoUrl && (
             <RenderResultMessage
-              className="isolate z-play-stop"
+              className="render-ignore isolate z-play-stop"
               hidden={showReady}
               isTouch={isTouch}
               videoUrl={renderedVideoUrl}
@@ -1533,6 +1551,7 @@ function Play(props: Props) {
             playing={chartPlaying || chartRendering}
             bpmChanges={chartSeq?.bpmChanges}
             playbackRate={playbackRate}
+            animationMode={chartRendering ? "time" : "state"}
           />
         )}
         <BPMSign
@@ -1552,11 +1571,12 @@ function Play(props: Props) {
             hasExplicitSpeedChange && !!queryOptions.speed
           }
           playbackRate={playbackRate}
+          animationMode={chartRendering ? "time" : "state"}
         />
         {isMobile && (
           <>
             <StatusBox
-              className="absolute inset-0 isolate z-play-status"
+              className="render-ignore absolute inset-0 isolate z-play-status"
               style={{
                 margin: 1 * statusScale * rem,
               }}
@@ -1627,7 +1647,7 @@ function Play(props: Props) {
       {!isMobile && statusHide && showResult && !showReady && (
         <div
           className={clsx(
-            "isolate z-play-status-overlay absolute inset-y-0 my-auto",
+            "render-ignore isolate z-play-status-overlay absolute inset-y-0 my-auto",
             "grid-centering"
           )}
           style={{ right: "0.75rem" }}

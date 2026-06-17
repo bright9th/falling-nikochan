@@ -6,6 +6,7 @@ import { useDisplayMode } from "@/scale.js";
 import { useEffect, useRef, useState } from "react";
 import SmilingFace from "@icon-park/react/lib/icons/SmilingFace.js";
 import { ChartSeqData } from "@falling-nikochan/chart";
+import { AnimationMode } from "./clientPage";
 
 interface Props {
   className?: string;
@@ -14,10 +15,12 @@ interface Props {
   getCurrentTimeSec: () => number | undefined;
   hasExplicitSpeedChange: boolean;
   playbackRate: number;
+  animationMode: AnimationMode;
 }
 export default function BPMSign(props: Props) {
   const { playUIScale } = useDisplayMode();
   const {
+    animationMode,
     chartPlaying,
     chartSeq,
     getCurrentTimeSec,
@@ -29,7 +32,7 @@ export default function BPMSign(props: Props) {
 
   // chart.bpmChanges 内の現在のインデックス
   const [currentBpmIndex, setCurrentBpmIndex] = useState<number>(0);
-  const displayBpmOriginal = chartSeq?.bpmChanges.at(currentBpmIndex)?.bpm;
+  const displayBpmOriginal = chartSeq?.bpmChanges[currentBpmIndex]?.bpm;
   const displayBpm = displayBpmOriginal
     ? displayBpmOriginal * playbackRate
     : undefined;
@@ -47,6 +50,7 @@ export default function BPMSign(props: Props) {
   // bpmを更新
   const prevPlaying1 = useRef<boolean>(false);
   useEffect(() => {
+    if (animationMode !== "state") return;
     const now = getCurrentTimeSec();
     const setNextBpmIndex = (nextIndex: number) => {
       const prevBpm =
@@ -118,9 +122,37 @@ export default function BPMSign(props: Props) {
     getCurrentTimeSec,
     flip,
     playbackRate,
+    animationMode,
   ]);
   // ↑ flipは使っていないが意図的に追加している
   // ↑ なんでだっけ?
+
+  useEffect(() => {
+    if (animationMode !== "time") return;
+    let frameId: number;
+    const update = () => {
+      const now = getCurrentTimeSec();
+      if (chartPlaying && now !== undefined && chartSeq !== null) {
+        let index = 0;
+        while (
+          index + 1 < chartSeq.bpmChanges.length &&
+          chartSeq.bpmChanges[index + 1].timeSec <= now
+        ) {
+          index++;
+        }
+        if (currentBpmIndex != index) setCurrentBpmIndex(index);
+      }
+      frameId = requestAnimationFrame(update);
+    };
+    frameId = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frameId);
+  }, [
+    animationMode,
+    chartPlaying,
+    chartSeq,
+    getCurrentTimeSec,
+    currentBpmIndex,
+  ]);
 
   //speed変化はアニメーションなし
   const prevPlaying2 = useRef<boolean>(false);

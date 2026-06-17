@@ -5,6 +5,7 @@ import { useTheme } from "@/common/theme";
 import { useDisplayMode } from "@/scale.js";
 import { useTranslations } from "next-intl";
 import { ReactNode, useEffect, useRef, useState } from "react";
+import { AnimationMode } from "./clientPage";
 
 interface CProps {
   className?: string;
@@ -59,6 +60,8 @@ interface Props {
   baseScore: number;
   pc: boolean;
   notesDone: NoteDone[][];
+  animationMode: AnimationMode;
+  getCurrentTimeSec: () => number | undefined;
 }
 export interface NoteDone {
   id: number;
@@ -89,7 +92,15 @@ export function ScoreDisp(props: Props) {
         <span className="flex-1 min-w-0 overflow-visible whitespace-nowrap ">
           {t("score")}
         </span>
-        <NumDisp num={score} fontSize1={40} fontSize2={24} anim alignAt2nd />
+        <NumDisp
+          num={score}
+          fontSize1={40}
+          fontSize2={24}
+          anim
+          alignAt2nd
+          animationMode={props.animationMode}
+          getCurrentTimeSec={props.getCurrentTimeSec}
+        />
       </div>
       <SkewedProgressBar
         value={score / 120}
@@ -107,25 +118,54 @@ export function ScoreDisp(props: Props) {
       )}
       {props.notesDone.map((row) =>
         row.map((nd) => (
-          <ScoreDiffAnim key={`${nd.id}-${nd.bigDone}`} nd={nd} />
+          <ScoreDiffAnim
+            key={`${nd.id}-${nd.bigDone}`}
+            nd={nd}
+            animationMode={props.animationMode}
+            getCurrentTimeSec={props.getCurrentTimeSec}
+          />
         ))
       )}
     </Cloud>
   );
 }
-function ScoreDiffAnim({ nd }: { nd: NoteDone }) {
+function ScoreDiffAnim({
+  nd,
+  animationMode,
+  getCurrentTimeSec,
+}: {
+  nd: NoteDone;
+  animationMode: AnimationMode;
+  getCurrentTimeSec: () => number | undefined;
+}) {
   const ref = useRef<HTMLDivElement>(null!);
+  const anim = useRef<Animation | undefined>(undefined);
   useEffect(() => {
-    ref.current.animate(
+    const a = ref.current.animate(
       [
         { transform: "translateX(-2.5em) scale(1)", opacity: 0 },
         { transform: "translateX(0) scale(1)", opacity: 1, offset: 0.3 },
         { transform: "translateX(0) scale(1)", opacity: 0.5, offset: 0.8 },
         { transform: "translateX(0) scale(0)", opacity: 0 },
       ],
-      { duration: 500, fill: "forwards", easing: "linear" }
+      {
+        duration: 500,
+        fill: "forwards",
+        easing: "linear",
+      }
     );
+    if (animationMode === "time") {
+      a.pause();
+      a.currentTime = 500;
+      anim.current = a;
+    }
   }, []);
+
+  if (animationMode === "time" && anim.current) {
+    const elapsedMs =
+      ((getCurrentTimeSec?.() ?? nd.hitTimeSec + 500) - nd.hitTimeSec) * 1000;
+    anim.current.currentTime = Math.max(0, Math.min(500, elapsedMs));
+  }
 
   const lch = useColorWithLerp(nd.chain / 100);
 
@@ -189,6 +229,8 @@ interface ChainProps {
   playing: boolean;
   notesTotal: number;
   fc: boolean;
+  animationMode: AnimationMode;
+  getCurrentTimeSec: () => number | undefined;
 }
 // slate-800: oklch(0.279 0.041 260.031); -> orange-500: oklch(0.705 0.213 47.604);
 // stone-300: oklch(0.869 0.005 56.366); -> yellow-400: oklch(0.852 0.199 91.936);
@@ -214,6 +256,8 @@ export function ChainDisp(props: ChainProps) {
               fontSize2={null}
               anim
               alignAt2nd
+              animationMode={props.animationMode}
+              getCurrentTimeSec={props.getCurrentTimeSec}
             />
           </span>
           <span className="flex-2" />
@@ -222,7 +266,12 @@ export function ChainDisp(props: ChainProps) {
             chain={props.chain}
             playing={props.playing}
           />
-          <ChainBigAnim className="z-disp-chain-big" chain={props.chain} />
+          <ChainBigAnim
+            className="z-disp-chain-big"
+            chain={props.chain}
+            animationMode={props.animationMode}
+            getCurrentTimeSec={props.getCurrentTimeSec}
+          />
         </div>
         <span
           className="relative text-center w-max overflow-visible "
@@ -244,28 +293,62 @@ export function ChainDisp(props: ChainProps) {
     </Cloud>
   );
 }
-function ChainBigAnim(props: { className: string; chain: number }) {
+function ChainBigAnim(props: {
+  className: string;
+  chain: number;
+  animationMode: AnimationMode;
+  getCurrentTimeSec: () => number | undefined;
+}) {
   const [animChain, setAnimChain] = useState<number>(0);
   const ref = useRef<HTMLSpanElement | null>(null);
   const anim = useRef<Animation | undefined>(undefined);
+  const triggerTime = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (props.chain < animChain) {
       setAnimChain(0);
-      anim.current?.cancel();
+      if (props.animationMode === "state") anim.current?.cancel();
     } else if (Math.floor(props.chain / 50) * 50 > animChain) {
       setAnimChain(Math.floor(props.chain / 50) * 50);
-      anim.current?.cancel();
-      requestAnimationFrame(() => {
-        anim.current = ref.current?.animate(
+      if (props.animationMode === "state") {
+        anim.current?.cancel();
+        requestAnimationFrame(() => {
+          anim.current = ref.current?.animate(
+            [
+              { transform: "rotate(0) scale(1)", opacity: 1 },
+              { transform: "rotate(-3.0deg) scale(5)", opacity: 0 },
+            ],
+            { duration: 500, fill: "forwards", easing: "ease-out" }
+          );
+        });
+      } else if (props.animationMode === "time") {
+        triggerTime.current = props.getCurrentTimeSec();
+        if (!ref.current) return;
+        const a = ref.current.animate(
           [
             { transform: "rotate(0) scale(1)", opacity: 1 },
             { transform: "rotate(-3.0deg) scale(5)", opacity: 0 },
           ],
           { duration: 500, fill: "forwards", easing: "ease-out" }
         );
-      });
+        a.pause();
+        a.currentTime = 500;
+        anim.current = a;
+      }
     }
-  }, [props.chain, animChain]);
+  }, [props.chain, animChain, props.animationMode, props.getCurrentTimeSec]);
+
+  if (
+    props.animationMode === "time" &&
+    anim.current &&
+    triggerTime.current !== undefined
+  ) {
+    const elapsedMs =
+      ((props.getCurrentTimeSec?.() ?? triggerTime.current + 500) -
+        triggerTime.current) *
+      1000;
+    anim.current.currentTime = Math.max(0, Math.min(500, elapsedMs));
+  }
+
   return (
     <div
       className={clsx(
@@ -463,6 +546,8 @@ interface NumProps {
   fontSize2: number | null;
   anim?: boolean;
   alignAt2nd?: boolean;
+  animationMode: AnimationMode;
+  getCurrentTimeSec: () => number | undefined;
 }
 const digits = 6;
 function NumDisp(props: NumProps) {
@@ -485,8 +570,16 @@ function NumDisp(props: NumProps) {
   const numAnimations = useRef<(Animation | undefined)[]>(
     new Array(digits).fill(undefined)
   );
+  const digitHitTime = useRef<(number | undefined)[]>(
+    new Array(digits).fill(undefined)
+  );
   useEffect(() => {
-    if (anim && num > prevNum.current) {
+    const currentTime = props.getCurrentTimeSec();
+    if (
+      anim &&
+      num > prevNum.current &&
+      !(props.animationMode === "time" && !currentTime)
+    ) {
       const numChanged = new Array(digits).fill(false);
       let a = 1000;
       for (let i = 0; i < digits; i++) {
@@ -495,21 +588,65 @@ function NumDisp(props: NumProps) {
           Math.floor(num / a) % 10 !== Math.floor(prevNum.current / a) % 10
         ) {
           numChanged[i] = true;
-          numAnimations.current[i]?.cancel();
-          numAnimations.current[i] = numRefs.current[i].current?.animate(
-            [
-              { transform: "translateY(0)" },
-              { transform: "translateY(-25%)", offset: 0.3 },
-              { transform: "translateY(0)" },
-            ],
-            { duration: 200, fill: "forwards", easing: "linear" }
-          );
+          if (props.animationMode === "state") {
+            numAnimations.current[i]?.cancel();
+            numAnimations.current[i] = numRefs.current[i].current?.animate(
+              [
+                { transform: "translateY(0)" },
+                { transform: "translateY(-25%)", offset: 0.3 },
+                { transform: "translateY(0)" },
+              ],
+              { duration: 200, fill: "forwards", easing: "linear" }
+            );
+          } else if (props.animationMode === "time") {
+            digitHitTime.current[i] = currentTime;
+          }
         }
         a /= 10;
       }
     }
     prevNum.current = num;
-  }, [num, anim]);
+  }, [num, anim, props.animationMode, props.getCurrentTimeSec]);
+  useEffect(() => {
+    if (props.animationMode !== "time") return;
+    for (let i = 0; i < digits; i++) {
+      const el = numRefs.current[i].current;
+      if (!el) continue;
+      const anim = el.animate(
+        [
+          { transform: "translateY(0)" },
+          { transform: "translateY(-25%)", offset: 0.3 },
+          { transform: "translateY(0)" },
+        ],
+        {
+          duration: 200,
+          fill: "forwards",
+          easing: "linear",
+        }
+      );
+      anim.pause();
+      anim.currentTime = 200; // idle state
+      numAnimations.current[i] = anim;
+    }
+    let raf: number;
+    const update = () => {
+      const now = props.getCurrentTimeSec();
+      if (now === undefined) return;
+      for (let i = 0; i < digits; i++) {
+        const start = digitHitTime.current[i];
+        const anim = numAnimations.current[i];
+        if (!anim || start === undefined) continue;
+        const elapsedMs = (now - start) * 1000;
+        anim.currentTime = Math.max(0, Math.min(200, elapsedMs));
+      }
+      raf = requestAnimationFrame(update);
+    };
+    update();
+    return () => {
+      cancelAnimationFrame(raf);
+      numAnimations.current.forEach((a) => a?.cancel());
+    };
+  }, [props.animationMode]);
   return (
     <>
       {[1000, 100, 10, 1].map((a, i) => (
