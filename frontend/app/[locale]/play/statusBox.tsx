@@ -33,8 +33,11 @@ export default function StatusBox(props: Props) {
   const { screenWidth, screenHeight, rem, statusScale } = useDisplayMode();
   const isMobile = screenWidth < screenHeight;
 
-  const totalJudgeCount = props.judgeCount.reduce((a, b) => a + b, 0);
-  const totalBestCount = props.bestCount?.reduce((a, b) => a + b, 0);
+  const totalJudgeCount =
+    props.judgeCount.reduce((a, b) => a + b, 0) - props.bigCount;
+  const totalBestCount = props.bestCount
+    ? props.bestCount.reduce((a, b) => a + b, 0) - props.bestCount[4]
+    : undefined;
 
   return (
     <Box

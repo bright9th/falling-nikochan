@@ -72,7 +72,7 @@ import { ButtonHighlight } from "@/common/button.jsx";
 import { APIError } from "@/common/apiError.js";
 import { useFlash } from "./useFlash.js";
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
-import { toCanvas } from "html-to-image";
+// import { toCanvas } from "html-to-image";
 
 export function InitPlay({ locale }: { locale: string }) {
   const te = useTranslations("error");
@@ -318,6 +318,7 @@ function Play(props: Props) {
   const prepareRendering = useRef<boolean>(false);
   const finishRendering = useRef<boolean>(false);
   const renderTimeSec = useRef<number | null>(null);
+  const [renderResultMessage, setRenderResultMessage] = useState<string>("");
   const [renderProgress, setRenderProgress] = useState<number>(0);
   const [renderFrame, setRenderFrame] = useState<number>(0);
   const [renderTotalFrames, setRenderTotalFrames] = useState<number>(0);
@@ -546,18 +547,16 @@ function Play(props: Props) {
     setShowStopped(false);
     setShowResult(false);
     setShowRenderResult(false);
-    const fps = 30;
-    const startTime = userBegin ?? ytBegin;
-    const endTime = chartSeq.ytEndSec;
-    const totalFrames = Math.ceil((endTime - startTime) * fps);
+    const fps = 60;
+    let currentRenderFrame = 0;
+    const totalFrames = Math.ceil((chartSeq.ytEndSec - begin) * fps);
     setRenderTotalFrames(totalFrames);
     const width = ref.current.clientWidth & ~1;
     const height = ref.current.clientHeight & ~1;
-    const scale = 1;
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
-    const ctx = canvas.getContext("2d")!;
+    // const ctx = canvas.getContext("2d")!;
     const muxer = new Muxer({
       target: new ArrayBufferTarget(),
       video: {
@@ -565,6 +564,7 @@ function Play(props: Props) {
         width,
         height,
       },
+      firstTimestampBehavior: "offset",
       fastStart: "in-memory",
     });
     const encoder = new VideoEncoder({
@@ -579,9 +579,65 @@ function Play(props: Props) {
       codec: "vp09.00.10.08",
       width,
       height,
-      bitrate: 12_000_000,
+      bitrate: 25_000_000,
       framerate: fps,
     });
+    const finalize = async () => {
+      await encoder.flush();
+      try {
+        muxer.finalize();
+        const buffer = muxer.target.buffer;
+        const blob = new Blob([buffer], {
+          type: "video/webm",
+        });
+        const url = URL.createObjectURL(blob);
+        setRenderedVideoUrl(url);
+        function secondsToTimestamp(seconds: number): string {
+          const h = Math.floor(seconds / 3600);
+          const m = Math.floor((seconds % 3600) / 60);
+          const s = seconds % 60;
+          return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${s
+            .toFixed(3)
+            .padStart(6, "0")}`;
+        }
+        const endSec = begin + currentRenderFrame / fps;
+        /* id + timestamps for ytdlp operation (audio) */
+        /* Then assemble video + audio via ffmpeg */
+        setRenderResultMessage(
+          `[${chartBrief!.ytId}]${secondsToTimestamp(begin)}-${secondsToTimestamp(endSec)}`
+        );
+        setShowRenderResult(true);
+      } catch {
+        setShowReady(true);
+      }
+      encoder.close();
+      setChartRendering(false);
+      setShowRendering(false);
+      finishRendering.current = false;
+      renderTimeSec.current = null;
+      setRenderProgress(0);
+      setRenderFrame(0);
+      setRenderTotalFrames(0);
+      setExitable((ex) => Math.max(ex || 0, performance.now() + 1000));
+    };
+    /* Chromium screen capture API */
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          frameRate: 60,
+        },
+        audio: false,
+      });
+    } catch {
+      await finalize();
+      return;
+    }
+    const track = stream.getVideoTracks()[0];
+    const processor = new (window as any).MediaStreamTrackProcessor({
+      track,
+    });
+    const reader = processor.readable.getReader();
     prepareRendering.current = true;
     function waitForPlayerReady(player: YouTubePlayer): Promise<void> {
       return new Promise((resolve) => {
@@ -594,9 +650,10 @@ function Play(props: Props) {
         player.addEventListener("onStateChange", listener);
       });
     }
+    ytPlayer.current?.seekTo(0, true);
     ytPlayer.current?.playVideo();
     await waitForPlayerReady(ytPlayer.current);
-    // await new Promise((resolve) => setTimeout(resolve, 5000));
+    await new Promise((resolve) => setTimeout(resolve, 5000));
     ytPlayer.current?.pauseVideo();
     ytPlayer.current?.seekTo(begin, true);
     const now = begin - chartSeq.offset - offsetPlusLatency * playbackRate;
@@ -611,14 +668,15 @@ function Play(props: Props) {
     lateTimes.current = [];
     prepareRendering.current = false;
     for (let frame = 0; frame < totalFrames; frame++) {
+      currentRenderFrame = frame;
       setRenderFrame(frame);
       setRenderProgress(frame / totalFrames);
-      const ytTime = startTime + frame / fps;
+      const ytTime = begin + frame / fps;
       renderTimeSec.current =
         ytTime - chartSeq.offset - offsetPlusLatency * playbackRate;
       ytPlayer.current?.seekTo(ytTime, true);
       await waitForSeek(ytTime);
-      await new Promise(requestAnimationFrame);
+      for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
       /* loop skip for time animation test */
       // if (frame > 0) {
       //   if (finishRendering.current) break;
@@ -627,37 +685,37 @@ function Play(props: Props) {
       /* dom traversing is inefficient
       but I'm also lazy to make every related elements
       draw on canvas themselves like Nikochans */
-      const shot = await toCanvas(ref.current, {
-        filter: (node) =>
-          !(node instanceof Element && node.closest(".render-ignore")),
-        pixelRatio: scale,
+      // const shot = await toCanvas(ref.current, {
+      //   filter: (node) =>
+      //     !(node instanceof Element && node.closest(".render-ignore")),
+      // });
+      // ctx.clearRect(0, 0, width, height);
+      // ctx.drawImage(shot, 0, 0, width, height);
+      const targetTimestamp = Math.round(frame * (1_000_000 / fps));
+      // const vf = new VideoFrame(canvas, {
+      //   timestamp: targetTimestamp,
+      // });
+      // encoder.encode(vf);
+      // vf.close();
+      var frameValue;
+      try {
+        const { value } = await reader.read();
+        frameValue = value;
+      } catch {
+        break;
+      }
+      /* consume only 1 compositor frame per render iteration */
+      const frameTimestamp = new VideoFrame(frameValue, {
+        timestamp: targetTimestamp,
       });
-      ctx.clearRect(0, 0, width, height);
-      ctx.drawImage(shot, 0, 0, width, height);
-      const vf = new VideoFrame(canvas, {
-        timestamp: Math.round(frame * (1_000_000 / fps)),
-      });
-      encoder.encode(vf);
-      vf.close();
+      encoder.encode(frameTimestamp);
+      frameValue.close();
+      frameTimestamp.close();
       if (finishRendering.current) break;
     }
-    await encoder.flush();
-    muxer.finalize();
-    const buffer = muxer.target.buffer;
-    const blob = new Blob([buffer], {
-      type: "video/webm",
-    });
-    const url = URL.createObjectURL(blob);
-    setRenderedVideoUrl(url);
-    setChartRendering(false);
-    setShowRendering(false);
-    finishRendering.current = false;
-    renderTimeSec.current = null;
-    setRenderProgress(0);
-    setRenderFrame(0);
-    setRenderTotalFrames(0);
-    setShowRenderResult(true);
-    setExitable((ex) => Math.max(ex || 0, performance.now() + 1000));
+    reader.releaseLock();
+    track.stop();
+    await finalize();
   }, [chartSeq, ytBegin, userBegin, ytPlayer.current]);
   const exportRender = useCallback(() => {
     if (renderedVideoUrl) {
@@ -1366,7 +1424,7 @@ function Play(props: Props) {
               )}
             </CenterBox>
           )}
-          {showRendering && (
+          {false && showRendering && (
             <CenterBox
               classNameOuter="render-ignore isolate z-[999999]"
               onPointerDown={(e) => e.stopPropagation()}
@@ -1509,6 +1567,7 @@ function Play(props: Props) {
               className="render-ignore isolate z-play-stop"
               hidden={showReady}
               isTouch={isTouch}
+              message={renderResultMessage}
               videoUrl={renderedVideoUrl}
               reset={reset}
               exit={exit}

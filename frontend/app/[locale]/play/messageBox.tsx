@@ -504,6 +504,7 @@ interface MessageProps4 {
   className?: string;
   hidden: boolean;
   isTouch: boolean;
+  message?: string;
   videoUrl: string;
   reset: () => void;
   exit: () => void;
@@ -511,12 +512,18 @@ interface MessageProps4 {
 export function RenderResultMessage(props: MessageProps4) {
   const t = useTranslations("play.message");
   return (
-    <CenterBox classNameOuter={props.className} hidden={props.hidden}>
+    <CenterBox
+      classNameOuter={props.className}
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      hidden={props.hidden}
+    >
       <p className="fn-heading-box">&lt; Render Complete &gt;</p>
+      {props.message && <p className="mb-3 select-text">{props.message}</p>}
       <video
         controls
         src={props.videoUrl}
-        className="h-[50vh] max-w-[900px] mb-3"
+        className="max-h-[50vh] max-w-[900px] mb-3"
       />
       <p className="flex flex-row justify-center">
         <Button
@@ -530,7 +537,7 @@ export function RenderResultMessage(props: MessageProps4) {
           onClick={() => {
             const a = document.createElement("a");
             a.href = props.videoUrl;
-            a.download = "render.webm";
+            a.download = `render${props.message}.webm`;
             a.click();
           }}
         />
