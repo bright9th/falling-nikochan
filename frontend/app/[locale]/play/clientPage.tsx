@@ -549,7 +549,11 @@ function Play(props: Props) {
     setShowRenderResult(false);
     const fps = 60;
     let currentRenderFrame = 0;
-    const totalFrames = Math.ceil((chartSeq.ytEndSec - begin) * fps);
+    const totalFrames = Math.ceil(
+      (Math.min(chartSeq.ytEndSec + 1, ytPlayer.current.getDuration()) -
+        begin) *
+        fps
+    );
     setRenderTotalFrames(totalFrames);
     const width = ref.current.clientWidth & ~1;
     const height = ref.current.clientHeight & ~1;
@@ -579,7 +583,7 @@ function Play(props: Props) {
       codec: "vp09.00.10.08",
       width,
       height,
-      bitrate: 25_000_000,
+      bitrate: 40_000_000,
       framerate: fps,
     });
     const finalize = async () => {
