@@ -318,7 +318,8 @@ function Play(props: Props) {
   const prepareRendering = useRef<boolean>(false);
   const finishRendering = useRef<boolean>(false);
   const renderTimeSec = useRef<number | null>(null);
-  const [renderResultMessage, setRenderResultMessage] = useState<string>("");
+  const [renderResultMessage, setRenderResultMessage] = useState<string[]>([]);
+  const [renderNoteTimestamp, setResultNoteTimestamp] = useState<string>("");
   const [renderProgress, setRenderProgress] = useState<number>(0);
   const [renderFrame, setRenderFrame] = useState<number>(0);
   const [renderTotalFrames, setRenderTotalFrames] = useState<number>(0);
@@ -607,8 +608,20 @@ function Play(props: Props) {
         const endSec = begin + currentRenderFrame / fps;
         /* id + timestamps for ytdlp operation (audio) */
         /* Then assemble video + audio via ffmpeg */
-        setRenderResultMessage(
-          `[${chartBrief!.ytId}]${secondsToTimestamp(begin)}-${secondsToTimestamp(endSec)}`
+        setRenderResultMessage([
+          `[${chartBrief!.ytId}]`,
+          `${secondsToTimestamp(begin)}-${secondsToTimestamp(endSec)}`,
+        ]);
+        const chartBegin = begin - chartSeq.offset;
+        setResultNoteTimestamp(
+          chartSeq.notes
+            .filter(
+              (n) =>
+                n.hitTimeSec >= chartBegin &&
+                n.hitTimeSec <= chartBegin + (endSec - begin)
+            )
+            .map((n) => `[${(n.hitTimeSec - chartBegin).toFixed(3)}]:${n.big}`)
+            .join("\n")
         );
         setShowRenderResult(true);
       } catch {
@@ -1572,6 +1585,7 @@ function Play(props: Props) {
               hidden={showReady}
               isTouch={isTouch}
               message={renderResultMessage}
+              noteTimestamps={renderNoteTimestamp}
               videoUrl={renderedVideoUrl}
               reset={reset}
               exit={exit}

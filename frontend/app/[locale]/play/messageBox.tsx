@@ -504,7 +504,8 @@ interface MessageProps4 {
   className?: string;
   hidden: boolean;
   isTouch: boolean;
-  message?: string;
+  message?: string[];
+  noteTimestamps?: string;
   videoUrl: string;
   reset: () => void;
   exit: () => void;
@@ -519,7 +520,9 @@ export function RenderResultMessage(props: MessageProps4) {
       hidden={props.hidden}
     >
       <p className="fn-heading-box">&lt; Render Complete &gt;</p>
-      {props.message && <p className="mb-3 select-text">{props.message}</p>}
+      {props.message && (
+        <p className="mb-3 select-text">{props.message.join()}</p>
+      )}
       <video
         controls
         src={props.videoUrl}
@@ -535,10 +538,20 @@ export function RenderResultMessage(props: MessageProps4) {
           text="export"
           keyName={props.isTouch ? undefined : "="}
           onClick={() => {
-            const a = document.createElement("a");
+            let a = document.createElement("a");
             a.href = props.videoUrl;
-            a.download = `render${props.message}.webm`;
+            a.download = `render${props.message?.join("") ?? "[undefined]"}.webm`;
             a.click();
+            if (!props.noteTimestamps) return;
+            const textBlob = new Blob([props.noteTimestamps], {
+              type: "text/plain",
+            });
+            const textUrl = URL.createObjectURL(textBlob);
+            a = document.createElement("a");
+            a.href = textUrl;
+            a.download = `timestamp${props.message?.[0] ?? "[undefined]"}.txt`;
+            a.click();
+            URL.revokeObjectURL(textUrl);
           }}
         />
         <Button
