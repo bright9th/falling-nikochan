@@ -381,6 +381,7 @@ function Play(props: Props) {
   };
   const waitForSeek = async (target: number) => {
     while (true) {
+      if (ytPlayer.current?.getPlayerState?.() === 0) return;
       const current = ytPlayer.current?.getCurrentTime() ?? 0;
       if (Math.abs(current - target) < 0.01) {
         return;
